@@ -1,26 +1,25 @@
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../generated/prisma/client";
 
-// Extend globalThis type safely
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-// Create adapter
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL!,
 });
 
-// Create or reuse Prisma instance
-export const prisma =
+const prismaClient =
   globalForPrisma.prisma ??
   new PrismaClient({
     adapter,
   });
 
-// Prevent multiple instances in dev (hot reload fix)
 if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+  globalForPrisma.prisma = prismaClient;
 }
 
+const prisma = prismaClient as any;
+
+export { prisma };
 export default prisma;
