@@ -1,5 +1,10 @@
 import prisma from "../lib/prisma";
-import { simplifyDebts, type Transaction } from "./debtSimplification";
+import {
+  computeBalances,
+  simplifyDebts,
+  type ExpenseInput,
+  type Transaction,
+} from "./debtSimplification";
 
 interface UserSummary {
   id: string;
@@ -21,10 +26,28 @@ interface BalanceTransaction {
 export interface GroupBalanceResult {
   groupId: string;
   balances: UserBalance[];
-  transactions: BalanceTransaction[];
+  simplifiedSettlements: BalanceTransaction[];
+  transactions: BalanceTransaction[]; // backward compatibility
 }
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
+
+const unknownUser = (id: string): UserSummary => ({
+  id,
+  name: "Unknown",
+  email: "",
+});
+
+function formatSettlements(
+  settlements: Transaction[],
+  userMap: Map<string, UserSummary>
+): BalanceTransaction[] {
+  return settlements.map((transaction) => ({
+    from: userMap.get(transaction.from) ?? unknownUser(transaction.from),
+    to: userMap.get(transaction.to) ?? unknownUser(transaction.to),
+    amount: round2(transaction.amount),
+  }));
+}
 
 export async function calculateGroupBalances(
   groupId: string
@@ -56,58 +79,41 @@ export async function calculateGroupBalances(
   ]);
 
   const userMap = new Map<string, UserSummary>(
-    members.map((member: { user: UserSummary }) => [member.user.id, member.user])
+    members.map((member: any) => [member.user.id, member.user])
   );
 
-  const balances = new Map<string, number>();
-  for (const userId of userMap.keys()) {
-    balances.set(userId, 0);
-  }
+  const expenseInputs: ExpenseInput[] = expenses.map((expense: any) => ({
+    payerId: String(expense.paidById),
+    shares: expense.shares.map((share: any) => ({
+      userId: share.userId,
+      amount: Number(share.amount),
+    })),
+  }));
 
-  for (const expense of expenses) {
-    const payerId = expense.paidById as string;
+  const computedBalances = computeBalances(expenseInputs);
 
-    if (!balances.has(payerId)) {
-      balances.set(payerId, 0);
-    }
-
-    for (const share of expense.shares as { userId: string; amount: number }[]) {
-      balances.set(payerId, (balances.get(payerId) ?? 0) + Number(share.amount));
-      balances.set(
-        share.userId,
-        (balances.get(share.userId) ?? 0) - Number(share.amount)
-      );
+  // Ensure all members are included
+  for (const memberId of userMap.keys()) {
+    if (!computedBalances.has(memberId)) {
+      computedBalances.set(memberId, 0);
     }
   }
 
-  const optimizedTransactions: Transaction[] = simplifyDebts(balances);
+  const simplified = simplifyDebts(computedBalances);
 
-  const resultBalances: UserBalance[] = Array.from(balances.entries()).map(
+  const balances: UserBalance[] = Array.from(computedBalances.entries()).map(
     ([userId, net]) => ({
-      user: userMap.get(userId) ?? { id: userId, name: "Unknown", email: "" },
+      user: userMap.get(userId) ?? unknownUser(userId),
       netBalance: round2(net),
     })
   );
 
-  const resultTransactions: BalanceTransaction[] = optimizedTransactions.map(
-    (transaction) => ({
-      from: userMap.get(transaction.from) ?? {
-        id: transaction.from,
-        name: "Unknown",
-        email: "",
-      },
-      to: userMap.get(transaction.to) ?? {
-        id: transaction.to,
-        name: "Unknown",
-        email: "",
-      },
-      amount: round2(transaction.amount),
-    })
-  );
+  const simplifiedSettlements = formatSettlements(simplified, userMap);
 
   return {
     groupId,
-    balances: resultBalances,
-    transactions: resultTransactions,
+    balances,
+    simplifiedSettlements,
+    transactions: simplifiedSettlements, // alias for compatibility
   };
 }
