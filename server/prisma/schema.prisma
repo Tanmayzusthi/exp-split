@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql" // change if you're using mysql/sqlserver
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  createdAt DateTime @default(now())
+
+  groups    GroupMember[]
+  expenses  Expense[] @relation("PaidBy")
+  splits    Split[]
+}
+
+model Group {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  members   GroupMember[]
+  expenses  Expense[]
+}
+
+model GroupMember {
+  id      String @id @default(uuid())
+  userId  String
+  groupId String
+
+  user    User  @relation(fields: [userId], references: [id])
+  group   Group @relation(fields: [groupId], references: [id])
+
+  @@unique([userId, groupId])
+}
+
+model Expense {
+  id          String   @id @default(uuid())
+  amount      Float
+  description String
+  groupId     String
+  paidById    String
+  createdAt   DateTime @default(now())
+
+  group   Group @relation(fields: [groupId], references: [id])
+  paidBy  User  @relation("PaidBy", fields: [paidById], references: [id])
+  splits  Split[]
+}
+
+model Split {
+  id         String @id @default(uuid())
+  userId     String
+  expenseId  String
+  amount     Float
+
+  user    User    @relation(fields: [userId], references: [id])
+  expense Expense @relation(fields: [expenseId], references: [id])
+}
+
+model Settlement {
+  id         String   @id @default(uuid())
+  fromUserId String
+  toUserId   String
+  amount     Float
+  createdAt  DateTime @default(now())
+}
