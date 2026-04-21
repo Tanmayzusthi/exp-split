@@ -27,13 +27,16 @@ export interface GroupBalanceResult {
   groupId: string;
   balances: UserBalance[];
   simplifiedSettlements: BalanceTransaction[];
-  // Kept for backward compatibility with clients already using `transactions`
-  transactions: BalanceTransaction[];
+  transactions: BalanceTransaction[]; // backward compatibility
 }
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
-const unknownUser = (id: string): UserSummary => ({ id, name: "Unknown", email: "" });
+const unknownUser = (id: string): UserSummary => ({
+  id,
+  name: "Unknown",
+  email: "",
+});
 
 function formatSettlements(
   settlements: Transaction[],
@@ -76,22 +79,20 @@ export async function calculateGroupBalances(
   ]);
 
   const userMap = new Map<string, UserSummary>(
-    members.map((member: { user: UserSummary }) => [member.user.id, member.user])
+    members.map((member: any) => [member.user.id, member.user])
   );
 
-  const expenseInputs: ExpenseInput[] = expenses.map(
-    (expense: { paidById: string; shares: { userId: string; amount: number }[] }) => ({
-      payerId: String(expense.paidById),
-      shares: expense.shares.map((share: { userId: string; amount: number }) => ({
-        userId: share.userId,
-        amount: Number(share.amount),
-      })),
-    })
-  );
+  const expenseInputs: ExpenseInput[] = expenses.map((expense: any) => ({
+    payerId: String(expense.paidById),
+    shares: expense.shares.map((share: any) => ({
+      userId: share.userId,
+      amount: Number(share.amount),
+    })),
+  }));
 
   const computedBalances = computeBalances(expenseInputs);
 
-  // Ensure every current member appears in balances even if balance is zero.
+  // Ensure all members are included
   for (const memberId of userMap.keys()) {
     if (!computedBalances.has(memberId)) {
       computedBalances.set(memberId, 0);
@@ -113,7 +114,6 @@ export async function calculateGroupBalances(
     groupId,
     balances,
     simplifiedSettlements,
-    // Alias to avoid breaking existing API consumers.
-    transactions: simplifiedSettlements,
+    transactions: simplifiedSettlements, // alias for compatibility
   };
 }
