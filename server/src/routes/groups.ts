@@ -7,6 +7,7 @@ import {
   getGroupBalances,
   getGroupSummary,
   getGroupExpensesList,
+  getGroupAnalytics,
 } from "../controllers/groupController";
 
 const router = Router();
@@ -21,6 +22,7 @@ router.get("/", getMyGroups);
 router.get("/:groupId/balances", getGroupBalances);
 router.get("/:groupId/summary", getGroupSummary);
 router.get("/:groupId/expenses", getGroupExpensesList);
+router.get("/:groupId/analytics", getGroupAnalytics);
 
 // Generic route LAST
 router.get("/:id", getGroupById);

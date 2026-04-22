@@ -20,8 +20,7 @@ export async function getSettlements(req: AuthRequest, res: Response) {
   const userId = req.userId;
 
   if (!userId) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
   const membership = await prisma.groupMember.findUnique({
@@ -29,8 +28,7 @@ export async function getSettlements(req: AuthRequest, res: Response) {
   });
 
   if (!membership) {
-    res.status(403).json({ error: "Not a member of this group" });
-    return;
+    return res.status(403).json({ error: "Not a member of this group" });
   }
 
   const expenses = await prisma.expense.findMany({
@@ -63,31 +61,28 @@ export async function getSettlements(req: AuthRequest, res: Response) {
     amount: t.amount,
   }));
 
-  res.json({ groupId, settlements: enriched });
+  return res.json({ groupId, settlements: enriched });
 }
 
 export async function recordSettlement(req: AuthRequest, res: Response) {
   const parsed = CreateSettlementSchema.safeParse(req.body);
 
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.flatten() });
-    return;
+    return res.status(400).json({ error: parsed.error.flatten() });
   }
 
   const authUserId = req.userId;
 
   if (!authUserId) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
   const { fromUserId, toUserId, amount, groupId } = parsed.data;
 
   if (fromUserId !== authUserId) {
-    res.status(403).json({
+    return res.status(403).json({
       error: "You can only record settlements from your account",
     });
-    return;
   }
 
   try {
@@ -98,14 +93,13 @@ export async function recordSettlement(req: AuthRequest, res: Response) {
       groupId,
     });
 
-    res.status(201).json(settlement);
+    return res.status(201).json(settlement);
   } catch (error) {
     if (error instanceof SettlementValidationError) {
-      res.status(error.statusCode).json({ error: error.message });
-      return;
+      return res.status(error.statusCode).json({ error: error.message });
     }
 
     console.error(error);
-    res.status(500).json({ error: "Failed to record settlement" });
+    return res.status(500).json({ error: "Failed to record settlement" });
   }
 }
