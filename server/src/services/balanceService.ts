@@ -57,11 +57,7 @@ export async function calculateGroupBalances(
       where: { groupId },
       include: {
         user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
+          select: { id: true, name: true, email: true },
         },
       },
     }),
@@ -69,10 +65,7 @@ export async function calculateGroupBalances(
       where: { groupId },
       include: {
         shares: {
-          select: {
-            userId: true,
-            amount: true,
-          },
+          select: { userId: true, amount: true },
         },
       },
     }),
@@ -114,6 +107,6 @@ export async function calculateGroupBalances(
     groupId,
     balances,
     simplifiedSettlements,
-    transactions: simplifiedSettlements, // alias for compatibility
+    transactions: simplifiedSettlements,
   };
 }

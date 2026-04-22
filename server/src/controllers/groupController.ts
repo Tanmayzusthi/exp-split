@@ -9,6 +9,13 @@ const CreateGroupSchema = z.object({
   memberIds: z.array(z.string()).optional(),
 });
 
+const GroupExpensesQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(10),
+  sort: z.enum(["asc", "desc"]).default("desc"),
+  userId: z.string().optional(),
+});
+
 export async function createGroup(req: AuthRequest, res: Response) {
   const parsed = CreateGroupSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -115,6 +122,7 @@ export async function getGroupBalances(req: AuthRequest, res: Response) {
     res.status(500).json({ error: "Failed to calculate balances" });
   }
 }
+
 export async function getGroupSummary(req: AuthRequest, res: Response) {
   const groupId = String(req.params.groupId);
   const userId = req.userId;
@@ -134,33 +142,22 @@ export async function getGroupSummary(req: AuthRequest, res: Response) {
   }
 
   try {
-    const [
-      expenseAggregate,
-      settlementAggregate,
-      memberCount,
-      recentExpenses,
-      balances,
-    ] = await Promise.all([
-      prisma.expense.aggregate({
-        where: { groupId },
-        _sum: { amount: true },
-      }),
-      prisma.settlement.aggregate({
-        where: { groupId },
-        _sum: { amount: true },
-      }),
-      prisma.groupMember.count({ where: { groupId } }),
-      prisma.expense.findMany({
-        where: { groupId },
-        orderBy: { createdAt: "desc" },
-        take: 5,
-        include: {
-          paidBy: { select: { id: true, name: true, email: true } },
-          shares: true,
-        },
-      }),
-      calculateGroupBalances(groupId),
-    ]);
+    const [expenseAggregate, settlementAggregate, memberCount, recentExpenses, balances] =
+      await Promise.all([
+        prisma.expense.aggregate({ where: { groupId }, _sum: { amount: true } }),
+        prisma.settlement.aggregate({ where: { groupId }, _sum: { amount: true } }),
+        prisma.groupMember.count({ where: { groupId } }),
+        prisma.expense.findMany({
+          where: { groupId },
+          orderBy: { createdAt: "desc" },
+          take: 5,
+          include: {
+            paidBy: { select: { id: true, name: true, email: true } },
+            shares: true,
+          },
+        }),
+        calculateGroupBalances(groupId),
+      ]);
 
     res.json({
       groupId,
@@ -174,4 +171,66 @@ export async function getGroupSummary(req: AuthRequest, res: Response) {
     console.error(error);
     res.status(500).json({ error: "Failed to fetch group summary" });
   }
+}
+
+export async function getGroupExpensesList(req: AuthRequest, res: Response) {
+  const groupId = String(req.params.groupId);
+  const userId = req.userId;
+  const parsedQuery = GroupExpensesQuerySchema.safeParse(req.query);
+
+  if (!parsedQuery.success) {
+    res.status(400).json({ error: parsedQuery.error.flatten() });
+    return;
+  }
+
+  const { page, limit, sort, userId: filterUserId } = parsedQuery.data;
+
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const membership = await prisma.groupMember.findFirst({
+    where: { groupId, userId },
+  });
+
+  if (!membership) {
+    res.status(403).json({ error: "Not a member of this group" });
+    return;
+  }
+
+  const whereClause = filterUserId
+    ? {
+        groupId,
+        OR: [
+          { paidById: filterUserId },
+          { shares: { some: { userId: filterUserId } } },
+        ],
+      }
+    : { groupId };
+
+  const [total, expenses] = await Promise.all([
+    prisma.expense.count({ where: whereClause }),
+    prisma.expense.findMany({
+      where: whereClause,
+      include: {
+        shares: true,
+        paidBy: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { createdAt: sort },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+  ]);
+
+  res.json({
+    groupId,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+    data: expenses,
+  });
 }
