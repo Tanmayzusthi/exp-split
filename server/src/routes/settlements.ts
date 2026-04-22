@@ -8,7 +8,11 @@ import {
 const router = Router();
 
 router.use(authenticate);
+
+// Create a settlement (groupId in body)
 router.post("/", recordSettlement);
+
+// Get settlements for a group
 router.get("/:groupId", getSettlements);
 
 export default router;
