@@ -5,6 +5,7 @@ import authRoutes from "./routes/auth";
 import expenseRoutes from "./routes/expenses";
 import groupRoutes from "./routes/groups";
 import settlementRoutes from "./routes/settlements";
+import userRoutes from "./routes/users";
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/settlements", settlementRoutes);
+app.use("/api/users", userRoutes);
 
 const PORT = process.env.PORT || 5000;
 
