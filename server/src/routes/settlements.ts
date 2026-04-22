@@ -9,10 +9,10 @@ const router = Router();
 
 router.use(authenticate);
 
-// POST settlement (groupId in body)
+// Create a settlement (groupId in body)
 router.post("/", recordSettlement);
 
-// GET settlements for group
+// Get settlements for a group
 router.get("/:groupId", getSettlements);
 
 export default router;

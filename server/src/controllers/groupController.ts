@@ -115,3 +115,63 @@ export async function getGroupBalances(req: AuthRequest, res: Response) {
     res.status(500).json({ error: "Failed to calculate balances" });
   }
 }
+export async function getGroupSummary(req: AuthRequest, res: Response) {
+  const groupId = String(req.params.groupId);
+  const userId = req.userId;
+
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const membership = await prisma.groupMember.findFirst({
+    where: { groupId, userId },
+  });
+
+  if (!membership) {
+    res.status(403).json({ error: "Not a member of this group" });
+    return;
+  }
+
+  try {
+    const [
+      expenseAggregate,
+      settlementAggregate,
+      memberCount,
+      recentExpenses,
+      balances,
+    ] = await Promise.all([
+      prisma.expense.aggregate({
+        where: { groupId },
+        _sum: { amount: true },
+      }),
+      prisma.settlement.aggregate({
+        where: { groupId },
+        _sum: { amount: true },
+      }),
+      prisma.groupMember.count({ where: { groupId } }),
+      prisma.expense.findMany({
+        where: { groupId },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        include: {
+          paidBy: { select: { id: true, name: true, email: true } },
+          shares: true,
+        },
+      }),
+      calculateGroupBalances(groupId),
+    ]);
+
+    res.json({
+      groupId,
+      totalExpenses: expenseAggregate._sum.amount ?? 0,
+      totalSettledAmount: settlementAggregate._sum.amount ?? 0,
+      pendingBalances: balances.balances,
+      memberCount,
+      recentExpenses,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch group summary" });
+  }
+}
