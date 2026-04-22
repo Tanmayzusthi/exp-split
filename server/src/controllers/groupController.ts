@@ -115,7 +115,6 @@ export async function getGroupBalances(req: AuthRequest, res: Response) {
     res.status(500).json({ error: "Failed to calculate balances" });
   }
 }
-
 export async function getGroupSummary(req: AuthRequest, res: Response) {
   const groupId = String(req.params.groupId);
   const userId = req.userId;
@@ -135,28 +134,33 @@ export async function getGroupSummary(req: AuthRequest, res: Response) {
   }
 
   try {
-    const [expenseAggregate, settlementAggregate, memberCount, recentExpenses, balances] =
-      await Promise.all([
-        prisma.expense.aggregate({
-          where: { groupId },
-          _sum: { amount: true },
-        }),
-        prisma.settlement.aggregate({
-          where: { groupId },
-          _sum: { amount: true },
-        }),
-        prisma.groupMember.count({ where: { groupId } }),
-        prisma.expense.findMany({
-          where: { groupId },
-          orderBy: { createdAt: "desc" },
-          take: 5,
-          include: {
-            paidBy: { select: { id: true, name: true, email: true } },
-            shares: true,
-          },
-        }),
-        calculateGroupBalances(groupId),
-      ]);
+    const [
+      expenseAggregate,
+      settlementAggregate,
+      memberCount,
+      recentExpenses,
+      balances,
+    ] = await Promise.all([
+      prisma.expense.aggregate({
+        where: { groupId },
+        _sum: { amount: true },
+      }),
+      prisma.settlement.aggregate({
+        where: { groupId },
+        _sum: { amount: true },
+      }),
+      prisma.groupMember.count({ where: { groupId } }),
+      prisma.expense.findMany({
+        where: { groupId },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        include: {
+          paidBy: { select: { id: true, name: true, email: true } },
+          shares: true,
+        },
+      }),
+      calculateGroupBalances(groupId),
+    ]);
 
     res.json({
       groupId,
