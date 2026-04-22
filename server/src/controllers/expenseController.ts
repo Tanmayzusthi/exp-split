@@ -7,6 +7,18 @@ const CreateExpenseSchema = z.object({
   groupId: z.string(),
   description: z.string().min(1),
   amount: z.number().positive(),
+  category: z
+    .enum([
+      "food",
+      "travel",
+      "rent",
+      "utilities",
+      "entertainment",
+      "shopping",
+      "health",
+      "other",
+    ])
+    .default("other"),
   splitType: z.enum(["EQUAL", "EXACT", "PERCENTAGE"]).default("EQUAL"),
   shares: z
     .array(
@@ -25,7 +37,7 @@ export async function createExpense(req: AuthRequest, res: Response) {
     return res.status(400).json({ error: parsed.error.format() });
   }
 
-  const { groupId, description, amount, splitType, shares } = parsed.data;
+  const { groupId, description, amount, category, splitType, shares } = parsed.data;
   const payerId = req.userId;
 
   if (!payerId) {
@@ -33,7 +45,6 @@ export async function createExpense(req: AuthRequest, res: Response) {
   }
 
   try {
-    // Get members
     const members = await prisma.groupMember.findMany({
       where: { groupId },
     });
@@ -42,7 +53,7 @@ export async function createExpense(req: AuthRequest, res: Response) {
       return res.status(400).json({ error: "Group has no members" });
     }
 
-    const memberIds = new Set(members.map((m) => m.userId));
+    const memberIds = new Set(members.map((m: { userId: string }) => m.userId));
 
     if (!memberIds.has(payerId)) {
       return res.status(403).json({ error: "Not a member of this group" });
@@ -50,27 +61,22 @@ export async function createExpense(req: AuthRequest, res: Response) {
 
     let finalShares: { userId: string; amount: number }[];
 
-    // ===== EQUAL SPLIT (CORRECT) =====
     if (splitType === "EQUAL" || !shares) {
       const totalMembers = members.length;
-
       const base = Math.floor((amount / totalMembers) * 100) / 100;
       let remainder = Math.round((amount - base * totalMembers) * 100) / 100;
 
-      finalShares = members.map((m) => {
+      finalShares = members.map((m: { userId: string }) => {
         let share = base;
 
         if (remainder > 0) {
           share += 0.01;
-          remainder -= 0.01;
+          remainder = Math.round((remainder - 0.01) * 100) / 100;
         }
 
         return { userId: m.userId, amount: share };
       });
-    }
-
-    // ===== EXACT SPLIT =====
-    else if (splitType === "EXACT") {
+    } else if (splitType === "EXACT") {
       const total = shares.reduce((sum, s) => sum + s.amount, 0);
 
       if (Math.abs(total - amount) > 0.01) {
@@ -80,10 +86,7 @@ export async function createExpense(req: AuthRequest, res: Response) {
       }
 
       finalShares = shares;
-    }
-
-    // ===== PERCENTAGE SPLIT =====
-    else {
+    } else {
       const totalPercent = shares.reduce((sum, s) => sum + s.amount, 0);
 
       if (Math.abs(totalPercent - 100) > 0.01) {
@@ -94,11 +97,10 @@ export async function createExpense(req: AuthRequest, res: Response) {
 
       finalShares = shares.map((s) => ({
         userId: s.userId,
-        amount: Math.round(((s.amount / 100) * amount) * 100) / 100,
+        amount: Math.round((s.amount / 100) * amount * 100) / 100,
       }));
     }
 
-    // Validate users
     for (const share of finalShares) {
       if (!memberIds.has(share.userId)) {
         return res.status(400).json({
@@ -107,20 +109,20 @@ export async function createExpense(req: AuthRequest, res: Response) {
       }
     }
 
-    // Create expense (transaction safe)
-    const expense = await prisma.$transaction(async (tx) => {
+    const expense = await prisma.$transaction(async (tx: any) => {
       return tx.expense.create({
         data: {
           groupId,
           paidById: payerId,
           description,
           amount,
-          splits: {
+          category,
+          shares: {
             create: finalShares,
           },
         },
         include: {
-          splits: true,
+          shares: true,
           paidBy: {
             select: { id: true, name: true },
           },
@@ -129,6 +131,39 @@ export async function createExpense(req: AuthRequest, res: Response) {
     });
 
     return res.status(201).json(expense);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Server error" });
+  }
+}
+
+export async function getGroupExpenses(req: AuthRequest, res: Response) {
+  const { groupId } = req.params;
+  const userId = req.userId;
+
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    const membership = await prisma.groupMember.findFirst({
+      where: { groupId, userId },
+    });
+
+    if (!membership) {
+      return res.status(403).json({ error: "Not a member of this group" });
+    }
+
+    const expenses = await prisma.expense.findMany({
+      where: { groupId },
+      include: {
+        shares: true,
+        paidBy: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return res.json(expenses);
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: "Server error" });
