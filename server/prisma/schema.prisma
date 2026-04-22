@@ -45,6 +45,7 @@ model Expense {
   id          String   @id @default(uuid())
   amount      Float
   description String
+  category    String   @default("other")
   groupId     String
   paidById    String
   createdAt   DateTime @default(now())

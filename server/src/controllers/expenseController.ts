@@ -7,6 +7,18 @@ const CreateExpenseSchema = z.object({
   groupId: z.string(),
   description: z.string().min(1),
   amount: z.number().positive(),
+  category: z
+    .enum([
+      "food",
+      "travel",
+      "rent",
+      "utilities",
+      "entertainment",
+      "shopping",
+      "health",
+      "other",
+    ])
+    .default("other"),
   splitType: z.enum(["EQUAL", "EXACT", "PERCENTAGE"]).default("EQUAL"),
   shares: z
     .array(
@@ -25,7 +37,7 @@ export async function createExpense(req: AuthRequest, res: Response) {
     return res.status(400).json({ error: parsed.error.format() });
   }
 
-  const { groupId, description, amount, splitType, shares } = parsed.data;
+  const { groupId, description, amount, category, splitType, shares } = parsed.data;
   const payerId = req.userId;
 
   if (!payerId) {
@@ -104,6 +116,7 @@ export async function createExpense(req: AuthRequest, res: Response) {
           paidById: payerId,
           description,
           amount,
+
           shares: {
             create: finalShares,
           },
