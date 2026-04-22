@@ -116,7 +116,7 @@ export async function createExpense(req: AuthRequest, res: Response) {
           paidById: payerId,
           description,
           amount,
-          category,
+
           shares: {
             create: finalShares,
           },
