@@ -6,7 +6,6 @@ import expenseRoutes from "./routes/expenses";
 import groupRoutes from "./routes/groups";
 import settlementRoutes from "./routes/settlements";
 import userRoutes from "./routes/users";
-import reminderRoutes from "./routes/reminders";
 
 const app = express();
 
@@ -22,7 +21,6 @@ app.use("/api/expenses", expenseRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/settlements", settlementRoutes);
 app.use("/api/users", userRoutes);
-app.use("/api/reminders", reminderRoutes);
 
 const PORT = process.env.PORT || 5000;
 

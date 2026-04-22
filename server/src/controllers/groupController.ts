@@ -16,20 +16,17 @@ const GroupExpensesQuerySchema = z.object({
   userId: z.string().optional(),
 });
 
+// CREATE GROUP
 export async function createGroup(req: AuthRequest, res: Response) {
   const parsed = CreateGroupSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.flatten() });
-    return;
+    return res.status(400).json({ error: parsed.error.flatten() });
   }
 
   const { name, memberIds = [] } = parsed.data;
   const userId = req.userId;
 
-  if (!userId) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const group = await prisma.group.create({
     data: {
@@ -48,13 +45,10 @@ export async function createGroup(req: AuthRequest, res: Response) {
   res.status(201).json(group);
 }
 
+// GET MY GROUPS
 export async function getMyGroups(req: AuthRequest, res: Response) {
   const userId = req.userId;
-
-  if (!userId) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const groups = await prisma.group.findMany({
     where: { members: { some: { userId } } },
@@ -69,14 +63,12 @@ export async function getMyGroups(req: AuthRequest, res: Response) {
   res.json(groups);
 }
 
+// GET GROUP BY ID
 export async function getGroupById(req: AuthRequest, res: Response) {
   const { id } = req.params;
   const userId = req.userId;
 
-  if (!userId) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const group = await prisma.group.findFirst({
     where: { id, members: { some: { userId } } },
@@ -88,247 +80,165 @@ export async function getGroupById(req: AuthRequest, res: Response) {
     },
   });
 
-  if (!group) {
-    res.status(404).json({ error: "Group not found" });
-    return;
-  }
+  if (!group) return res.status(404).json({ error: "Group not found" });
 
   res.json(group);
 }
 
+// BALANCES
 export async function getGroupBalances(req: AuthRequest, res: Response) {
   const groupId = String(req.params.groupId);
   const userId = req.userId;
 
-  if (!userId) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const membership = await prisma.groupMember.findFirst({
     where: { groupId, userId },
   });
 
-  if (!membership) {
-    res.status(403).json({ error: "Not a member of this group" });
-    return;
-  }
+  if (!membership) return res.status(403).json({ error: "Not a member" });
 
-  try {
-    const balances = await calculateGroupBalances(groupId);
-    res.json(balances);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Failed to calculate balances" });
-  }
+  const balances = await calculateGroupBalances(groupId);
+  res.json(balances);
 }
 
+// SUMMARY
 export async function getGroupSummary(req: AuthRequest, res: Response) {
   const groupId = String(req.params.groupId);
   const userId = req.userId;
 
-  if (!userId) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const membership = await prisma.groupMember.findFirst({
     where: { groupId, userId },
   });
 
-  if (!membership) {
-    res.status(403).json({ error: "Not a member of this group" });
-    return;
-  }
+  if (!membership) return res.status(403).json({ error: "Not a member" });
 
-  try {
-    const [expenseAggregate, settlementAggregate, memberCount, recentExpenses, balances] =
-      await Promise.all([
-        prisma.expense.aggregate({
-          where: { groupId },
-          _sum: { amount: true },
-        }),
-        prisma.settlement.aggregate({
-          where: { groupId },
-          _sum: { amount: true },
-        }),
-        prisma.groupMember.count({ where: { groupId } }),
-        prisma.expense.findMany({
-          where: { groupId },
-          orderBy: { createdAt: "desc" },
-          take: 5,
-          include: {
-            paidBy: { select: { id: true, name: true, email: true } },
-            shares: true,
-          },
-        }),
-        calculateGroupBalances(groupId),
-      ]);
+  const [expenseAggregate, settlementAggregate, memberCount, recentExpenses, balances] =
+    await Promise.all([
+      prisma.expense.aggregate({
+        where: { groupId },
+        _sum: { amount: true },
+      }),
+      prisma.settlement.aggregate({
+        where: { groupId },
+        _sum: { amount: true },
+      }),
+      prisma.groupMember.count({ where: { groupId } }),
+      prisma.expense.findMany({
+        where: { groupId },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        include: {
+          paidBy: { select: { id: true, name: true, email: true } },
+          shares: true,
+        },
+      }),
+      calculateGroupBalances(groupId),
+    ]);
 
-    res.json({
-      groupId,
-      totalExpenses: expenseAggregate._sum.amount ?? 0,
-      totalSettledAmount: settlementAggregate._sum.amount ?? 0,
-      pendingBalances: balances.balances,
-      memberCount,
-      recentExpenses,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Failed to fetch group summary" });
-  }
+  res.json({
+    groupId,
+    totalExpenses: expenseAggregate._sum.amount ?? 0,
+    totalSettledAmount: settlementAggregate._sum.amount ?? 0,
+    pendingBalances: balances.balances,
+    memberCount,
+    recentExpenses,
+  });
 }
 
+// EXPENSE LIST
 export async function getGroupExpensesList(req: AuthRequest, res: Response) {
   const groupId = String(req.params.groupId);
   const userId = req.userId;
-  const parsedQuery = GroupExpensesQuerySchema.safeParse(req.query);
 
-  if (!parsedQuery.success) {
-    res.status(400).json({ error: parsedQuery.error.flatten() });
-    return;
-  }
+  const parsed = GroupExpensesQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-  const { page, limit, sort, userId: filterUserId } = parsedQuery.data;
+  const { page, limit, sort, userId: filterUserId } = parsed.data;
 
-  if (!userId) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const membership = await prisma.groupMember.findFirst({
     where: { groupId, userId },
   });
 
-  if (!membership) {
-    res.status(403).json({ error: "Not a member of this group" });
-    return;
-  }
-
-  if (filterUserId) {
-    const filteredMember = await prisma.groupMember.findFirst({
-      where: { groupId, userId: filterUserId },
-    });
-
-    if (!filteredMember) {
-      res.status(400).json({ error: "Filter user is not a member of this group" });
-      return;
-    }
-  }
+  if (!membership) return res.status(403).json({ error: "Not a member" });
 
   const whereClause = filterUserId
     ? {
         groupId,
-        OR: [{ paidById: filterUserId }, { shares: { some: { userId: filterUserId } } }],
+        OR: [
+          { paidById: filterUserId },
+          { shares: { some: { userId: filterUserId } } },
+        ],
       }
     : { groupId };
 
-  try {
-    const [total, expenses] = await Promise.all([
-      prisma.expense.count({ where: whereClause }),
-      prisma.expense.findMany({
-        where: whereClause,
-        include: {
-          shares: true,
-          paidBy: { select: { id: true, name: true, email: true } },
-        },
-        orderBy: { createdAt: sort },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-    ]);
+  const [total, expenses] = await Promise.all([
+    prisma.expense.count({ where: whereClause }),
+    prisma.expense.findMany({
+      where: whereClause,
+      include: {
+        shares: true,
+        paidBy: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { createdAt: sort },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+  ]);
 
-    res.json({
-      groupId,
-      filters: {
-        userId: filterUserId ?? null,
-        sortByDate: sort,
-      },
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-      data: expenses,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Failed to fetch group expenses" });
-  }
+  res.json({ page, total, data: expenses });
 }
 
+// ANALYTICS
 export async function getGroupAnalytics(req: AuthRequest, res: Response) {
   const groupId = String(req.params.groupId);
   const userId = req.userId;
 
-  if (!userId) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const membership = await prisma.groupMember.findFirst({
     where: { groupId, userId },
   });
 
-  if (!membership) {
-    res.status(403).json({ error: "Not a member of this group" });
-    return;
-  }
+  if (!membership) return res.status(403).json({ error: "Not a member" });
 
-  try {
-    const expenses = await prisma.expense.findMany({
-      where: { groupId },
-      select: {
-        amount: true,
-        category: true,
-        createdAt: true,
-        paidById: true,
-        paidBy: {
-          select: { id: true, name: true, email: true },
-        },
-      },
-    });
+  const expenses = await prisma.expense.findMany({
+    where: { groupId },
+    select: {
+      amount: true,
+      category: true,
+      createdAt: true,
+      paidById: true,
+      paidBy: { select: { id: true, name: true, email: true } },
+    },
+  });
 
-    const categoryTotals = new Map<string, number>();
-    const monthlyTotals = new Map<string, number>();
-    const spenderTotals = new Map<string, { user: { id: string; name: string; email: string }; amount: number }>();
+  const categoryMap = new Map<string, number>();
+  const monthlyMap = new Map<string, number>();
+  const spenderMap = new Map<string, any>();
 
-    for (const expense of expenses) {
-      const amount = Number(expense.amount);
-      const category = (expense.category || "other").toLowerCase();
-      const month = new Date(expense.createdAt).toISOString().slice(0, 7);
+  for (const e of expenses) {
+    const amt = Number(e.amount);
+    const cat = (e.category || "other").toLowerCase();
+    const month = new Date(e.createdAt).toISOString().slice(0, 7);
 
-      categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + amount);
-      monthlyTotals.set(month, (monthlyTotals.get(month) ?? 0) + amount);
+    categoryMap.set(cat, (categoryMap.get(cat) ?? 0) + amt);
+    monthlyMap.set(month, (monthlyMap.get(month) ?? 0) + amt);
 
-      const existingSpender = spenderTotals.get(expense.paidById);
-      if (existingSpender) {
-        existingSpender.amount += amount;
-      } else {
-        spenderTotals.set(expense.paidById, { user: expense.paidBy, amount });
-      }
+    if (spenderMap.has(e.paidById)) {
+      spenderMap.get(e.paidById).amount += amt;
+    } else {
+      spenderMap.set(e.paidById, { user: e.paidBy, amount: amt });
     }
-
-    const categoryBreakdown = Array.from(categoryTotals.entries())
-      .map(([category, total]) => ({ category, total }))
-      .sort((a, b) => b.total - a.total);
-
-    const monthlySpending = Array.from(monthlyTotals.entries())
-      .map(([month, total]) => ({ month, total }))
-      .sort((a, b) => a.month.localeCompare(b.month));
-
-    const topSpender =
-      Array.from(spenderTotals.values()).sort((a, b) => b.amount - a.amount)[0] ?? null;
-
-    res.json({
-      groupId,
-      categoryBreakdown,
-      monthlySpending,
-      topSpender,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Failed to fetch group analytics" });
   }
+
+  res.json({
+    categoryBreakdown: Array.from(categoryMap),
+    monthlySpending: Array.from(monthlyMap),
+    topSpender: Array.from(spenderMap.values()).sort((a, b) => b.amount - a.amount)[0],
+  });
 }
