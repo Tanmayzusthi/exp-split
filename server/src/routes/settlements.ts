@@ -1,12 +1,14 @@
 import { Router } from "express";
-import { authenticate } from "../middleware/authenticate";
-import { getSettlements, recordSettlement } from "../controllers/settlementController";
+import { authenticate } from "../middleware/auth";
+import {
+  getSettlements,
+  recordSettlement,
+} from "../controllers/settlementController";
 
 const router = Router();
 
 router.use(authenticate);
-
-router.get("/:groupId",  getSettlements);
-router.post("/:groupId", recordSettlement);
+router.post("/", recordSettlement);
+router.get("/:groupId", getSettlements);
 
 export default router;
