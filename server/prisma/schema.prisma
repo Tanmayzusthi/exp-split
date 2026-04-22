@@ -13,9 +13,11 @@ model User {
   email     String   @unique
   createdAt DateTime @default(now())
 
-  groups    GroupMember[]
-  expenses  Expense[] @relation("PaidBy")
-  splits    Split[]
+  groups          GroupMember[]
+  expenses        Expense[] @relation("PaidBy")
+  splits          Split[]
+  settlementsFrom Settlement[] @relation("SettlementFrom")
+  settlementsTo   Settlement[] @relation("SettlementTo")
 }
 
 model Group {
@@ -23,8 +25,9 @@ model Group {
   name      String
   createdAt DateTime @default(now())
 
-  members   GroupMember[]
-  expenses  Expense[]
+  members     GroupMember[]
+  expenses    Expense[]
+  settlements Settlement[]
 }
 
 model GroupMember {
@@ -42,6 +45,7 @@ model Expense {
   id          String   @id @default(uuid())
   amount      Float
   description String
+  category    String   @default("other")
   groupId     String
   paidById    String
   createdAt   DateTime @default(now())
@@ -63,8 +67,16 @@ model Split {
 
 model Settlement {
   id         String   @id @default(uuid())
+  groupId    String
   fromUserId String
   toUserId   String
   amount     Float
   createdAt  DateTime @default(now())
+
+  group    Group @relation(fields: [groupId], references: [id])
+  fromUser User  @relation("SettlementFrom", fields: [fromUserId], references: [id])
+  toUser   User  @relation("SettlementTo", fields: [toUserId], references: [id])
+
+  @@index([groupId])
+  @@index([groupId, fromUserId, toUserId])
 }
