@@ -27,6 +27,7 @@ export async function getSettlements(req: AuthRequest, res: Response) {
   const membership = await prisma.groupMember.findUnique({
     where: { userId_groupId: { userId, groupId } },
   });
+
   if (!membership) {
     res.status(403).json({ error: "Not a member of this group" });
     return;
@@ -40,15 +41,20 @@ export async function getSettlements(req: AuthRequest, res: Response) {
   const simplified = getSimplifiedDebts(
     expenses.map((e: any) => ({
       payerId: e.paidById,
-      shares: e.shares.map((s: any) => ({ userId: s.userId, amount: Number(s.amount) })),
+      shares: e.shares.map((s: any) => ({
+        userId: s.userId,
+        amount: Number(s.amount),
+      })),
     }))
   );
 
   const userIds = [...new Set(simplified.flatMap((t) => [t.from, t.to]))];
+
   const users = await prisma.user.findMany({
     where: { id: { in: userIds } },
     select: { id: true, name: true, email: true },
   });
+
   const userMap = Object.fromEntries(users.map((u: any) => [u.id, u]));
 
   const enriched = simplified.map((t) => ({
@@ -78,7 +84,9 @@ export async function recordSettlement(req: AuthRequest, res: Response) {
   const { fromUserId, toUserId, amount, groupId } = parsed.data;
 
   if (fromUserId !== authUserId) {
-    res.status(403).json({ error: "You can only record settlements from your account" });
+    res.status(403).json({
+      error: "You can only record settlements from your account",
+    });
     return;
   }
 

@@ -144,14 +144,8 @@ export async function getGroupSummary(req: AuthRequest, res: Response) {
   try {
     const [expenseAggregate, settlementAggregate, memberCount, recentExpenses, balances] =
       await Promise.all([
-        prisma.expense.aggregate({
-          where: { groupId },
-          _sum: { amount: true },
-        }),
-        prisma.settlement.aggregate({
-          where: { groupId },
-          _sum: { amount: true },
-        }),
+        prisma.expense.aggregate({ where: { groupId }, _sum: { amount: true } }),
+        prisma.settlement.aggregate({ where: { groupId }, _sum: { amount: true } }),
         prisma.groupMember.count({ where: { groupId } }),
         prisma.expense.findMany({
           where: { groupId },
@@ -205,55 +199,38 @@ export async function getGroupExpensesList(req: AuthRequest, res: Response) {
     return;
   }
 
-  if (filterUserId) {
-    const filteredMember = await prisma.groupMember.findFirst({
-      where: { groupId, userId: filterUserId },
-    });
-
-    if (!filteredMember) {
-      res.status(400).json({ error: "Filter user is not a member of this group" });
-      return;
-    }
-  }
-
   const whereClause = filterUserId
     ? {
         groupId,
-        OR: [{ paidById: filterUserId }, { shares: { some: { userId: filterUserId } } }],
+        OR: [
+          { paidById: filterUserId },
+          { shares: { some: { userId: filterUserId } } },
+        ],
       }
     : { groupId };
 
-  try {
-    const [total, expenses] = await Promise.all([
-      prisma.expense.count({ where: whereClause }),
-      prisma.expense.findMany({
-        where: whereClause,
-        include: {
-          shares: true,
-          paidBy: { select: { id: true, name: true, email: true } },
-        },
-        orderBy: { createdAt: sort },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-    ]);
+  const [total, expenses] = await Promise.all([
+    prisma.expense.count({ where: whereClause }),
+    prisma.expense.findMany({
+      where: whereClause,
+      include: {
+        shares: true,
+        paidBy: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { createdAt: sort },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+  ]);
 
-    res.json({
-      groupId,
-      filters: {
-        userId: filterUserId ?? null,
-        sortByDate: sort,
-      },
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-      data: expenses,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Failed to fetch group expenses" });
-  }
+  res.json({
+    groupId,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+    data: expenses,
+  });
 }
